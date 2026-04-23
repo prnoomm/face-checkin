@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face ID Registration & Attendance</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        body { background-color: #f3f4f6; font-family: 'Sarabun', sans-serif; }
+        .video-wrapper { position: relative; margin: 0 auto; width: 100%; max-width: 640px; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        video { width: 100%; height: auto; display: block; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .hidden { display: none !important; }
+        
+        /* สกอร์บาร์สวยๆ สำหรับรายการที่เช็คชื่อแล้ว */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="text-gray-800 pb-10">
+
+    <!-- นำ URL Web App จาก Google Apps Script มาใส่ในเครื่องหมายคำพูดด้านล่าง -->
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbw4vHS_jtauAzUnvMnp6z57IB_KDlASxFjyps48T76eDVZB86f2W-QgBvSkqC7cAlR9/exec"; 
+    </script>
+
+    <div class="max-w-6xl mx-auto p-4 mt-4">
+        
+        <!-- แบนเนอร์สถานะระบบส่วนบน -->
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">📸 ระบบเช็คชื่อเข้าเรียนด้วยใบหน้า</h1>
+            <p id="global-status" class="text-gray-500 font-medium animate-pulse">กำลังโหลดโมเดล AI กรุณารอสักครู่...</p>
+        </div>
+
+        <!-- เมนูสลับโหมด (เพิ่มหน้าแรก และ วิธีใช้งาน) -->
+        <div class="flex justify-center space-x-2 md:space-x-4 mb-6 flex-wrap gap-y-2">
+            <button id="btn-tab-home" onclick="switchTab('home')" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-full shadow-md hover:bg-blue-700 transition">🏠 หน้าแรก</button>
+            <button id="btn-tab-register" onclick="switchTab('register')" class="px-5 py-2 bg-gray-300 text-gray-700 font-bold rounded-full shadow-md hover:bg-indigo-600 hover:text-white transition">📝 ลงทะเบียน</button>
+            <button id="btn-tab-checkin" onclick="switchTab('checkin')" class="px-5 py-2 bg-gray-300 text-gray-700 font-bold rounded-full shadow-md hover:bg-green-600 hover:text-white transition">✅ เช็คชื่อ</button>
+            <button id="btn-tab-summary" onclick="switchTab('summary')" class="px-5 py-2 bg-gray-300 text-gray-700 font-bold rounded-full shadow-md hover:bg-purple-600 hover:text-white transition">📊 สรุปรายวัน</button>
+            <button id="btn-tab-howto" onclick="switchTab('howto')" class="px-5 py-2 bg-gray-300 text-gray-700 font-bold rounded-full shadow-md hover:bg-orange-500 hover:text-white transition">📖 วิธีใช้งาน</button>
+        </div>
+
+        <!-- 1. หน้าแรก (Dashboard) -->
+        <div id="home-section" class="w-full max-w-4xl mx-auto transition-all">
+            <div class="bg-white rounded-2xl shadow-lg p-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">ยินดีต้อนรับสู่ระบบเช็คชื่ออัตโนมัติ</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-blue-50 rounded-xl p-6 text-center border border-blue-100 shadow-sm">
+                        <div class="text-blue-500 text-4xl mb-2">👥</div>
+                        <h3 class="text-lg font-semibold text-gray-700">นักเรียนทั้งหมด</h3>
+                        <p id="dash-total" class="text-3xl font-bold text-blue-600 mt-2">-</p>
+                    </div>
+                    <div class="bg-green-50 rounded-xl p-6 text-center border border-green-100 shadow-sm">
+                        <div class="text-green-500 text-4xl mb-2">✅</div>
+                        <h3 class="text-lg font-semibold text-gray-700">ลงทะเบียนใบหน้าแล้ว</h3>
+                        <p id="dash-registered" class="text-3xl font-bold text-green-600 mt-2">-</p>
+                    </div>
+                    <div class="bg-red-50 rounded-xl p-6 text-center border border-red-100 shadow-sm">
+                        <div class="text-red-500 text-4xl mb-2">⚠️</div>
+                        <h3 class="text-lg font-semibold text-gray-700">ยังไม่ลงทะเบียน</h3>
+                        <p id="dash-unregistered" class="text-3xl font-bold text-red-600 mt-2">-</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button onclick="switchTab('register')" class="p-4 bg-indigo-600 text-white rounded-xl shadow hover:bg-indigo-700 transition font-bold text-lg flex items-center justify-center gap-2">
+                        <span>📝</span> เริ่มลงทะเบียนใบหน้าใหม่
+                    </button>
+                    <button onclick="switchTab('checkin')" class="p-4 bg-green-600 text-white rounded-xl shadow hover:bg-green-700 transition font-bold text-lg flex items-center justify-center gap-2">
+                        <span>📸</span> เปิดกล้องเช็คชื่อทันที
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. คอนเทนเนอร์หลักสำหรับ กล้อง (ซ้าย) และ รายชื่อ (ขวา) (ใช้ร่วมกันโหมดลงทะเบียนและเช็คชื่อ) -->
+        <div id="main-container" class="flex flex-col lg:flex-row gap-6 justify-center items-start w-full transition-all hidden">
+            
+            <!-- ส่วนของกล้องและเครื่องมือ (ซ้าย) -->
+            <div id="camera-section" class="flex-1 bg-white rounded-2xl shadow-lg p-6 text-center max-w-3xl mx-auto w-full transition-all">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2" id="title-text">...</h2>
+                <p class="text-gray-500 mb-4" id="status-text">...</p>
+                
+                <!-- ส่วนของกล้อง -->
+                <div class="video-wrapper">
+                    <video id="video" autoplay muted playsinline></video>
+                </div>
+
+                <!-- UI โหมดลงทะเบียน -->
+                <div id="register-ui" class="mt-6 hidden">
+                    <p class="text-sm text-gray-500 mb-2">เลือกรายชื่อนักเรียนเพื่อสแกนและบันทึกใบหน้า</p>
+                    <select id="student-select" class="w-full max-w-md p-3 border rounded-lg mb-4 text-center text-lg">
+                        <option value="">กำลังโหลดรายชื่อ...</option>
+                    </select>
+                    <br>
+                    <button onclick="registerFace()" class="px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition w-full max-w-md">
+                        📸 สแกนเพื่อบันทึกใบหน้า
+                    </button>
+                    <p id="reg-msg" class="mt-4 font-bold"></p>
+                </div>
+
+                <!-- UI โหมดเช็คชื่อ -->
+                <div id="checkin-ui" class="mt-6 hidden">
+                    <div class="p-4 bg-green-50 rounded-xl border border-green-200 min-h-[120px] flex items-center justify-center flex-col" id="result-box">
+                        <p class="text-gray-600 text-lg">กรุณามองที่กล้องเพื่อเช็คชื่อ...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- แถบแสดงข้อมูลรายชื่อนักเรียนที่เช็คชื่อเรียบร้อยแล้ว (ขวา) -->
+            <div id="attendance-list-section" class="w-full lg:w-[400px] bg-white rounded-2xl shadow-lg p-6 hidden flex-col h-auto lg:h-[650px]">
+                <div class="flex justify-between items-center border-b pb-3 mb-4 shrink-0">
+                    <h2 class="text-xl font-bold text-gray-800">📋 เช็คชื่อล่าสุด</h2>
+                    <span id="attendance-count" class="bg-green-100 text-green-800 text-sm font-semibold px-3 py-1 rounded-full">0 คน</span>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    <ul id="attendance-list" class="space-y-2 text-left">
+                        <li id="empty-list-msg" class="text-center text-gray-400 py-4 italic">ยังไม่มีข้อมูลการเช็คชื่อในรอบนี้</li>
+                        <!-- รายชื่อจะถูกเพิ่มที่นี่ -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. หน้าสรุปการมาเรียนรายวัน -->
+        <div id="summary-section" class="bg-white rounded-2xl shadow-lg p-6 text-center max-w-4xl mx-auto w-full hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">📊 สรุปการมาเรียนรายวัน</h2>
+            
+            <div class="flex justify-center items-center flex-wrap space-x-0 space-y-2 md:space-y-0 md:space-x-4 mb-6">
+                <input type="date" id="summary-date" class="p-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <button onclick="fetchSummaryData()" class="px-8 py-3 bg-purple-600 text-white font-bold rounded-xl shadow-lg hover:bg-purple-700 transition">
+                    🔍 ค้นหาข้อมูล
+                </button>
+            </div>
+
+            <div id="summary-loading" class="text-gray-500 py-8 hidden animate-pulse font-medium text-lg">กำลังโหลดข้อมูล...</div>
+            
+            <div class="overflow-x-auto rounded-lg shadow-sm border border-gray-100 hidden" id="summary-table-container">
+                <table class="min-w-full bg-white text-left text-gray-700">
+                    <thead class="bg-purple-50 border-b border-purple-100 text-purple-800 font-semibold">
+                        <tr>
+                            <th class="py-3 px-4 w-24">เวลา</th>
+                            <th class="py-3 px-4 w-32">รหัสนักเรียน</th>
+                            <th class="py-3 px-4">ชื่อ - นามสกุล</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summary-tbody" class="divide-y divide-gray-100">
+                        <!-- rows -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="summary-empty" class="text-gray-500 py-10 bg-gray-50 rounded-xl hidden font-medium">ไม่พบข้อมูลการมาเรียนในวันที่เลือก</div>
+        </div>
+
+        <!-- 4. หน้าวิธีใช้งาน -->
+        <div id="howto-section" class="bg-white rounded-2xl shadow-lg p-8 max-w-4xl mx-auto w-full hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">📖 วิธีการใช้งานระบบ</h2>
+            
+            <div class="space-y-6 text-gray-700">
+                <div class="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                    <h3 class="font-bold text-lg text-indigo-700 mb-2">1. โหมดลงทะเบียน (ทำครั้งแรกครั้งเดียว)</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>ไปที่แท็บ <strong>"ลงทะเบียน"</strong></li>
+                        <li>อนุญาตให้เบราว์เซอร์เข้าถึงกล้องเว็บแคม</li>
+                        <li>เลือกรายชื่อนักเรียนจาก Dropdown (ที่มีสัญลักษณ์ ❌ คือยังไม่มีข้อมูลใบหน้า)</li>
+                        <li>มองที่กล้องให้เห็นใบหน้าชัดเจน ไม่สวมหน้ากากอนามัย หรือแว่นตากันแดด</li>
+                        <li>กดปุ่ม <strong>"สแกนเพื่อบันทึกใบหน้า"</strong> ระบบจะบันทึกโครงสร้างใบหน้าลงในฐานข้อมูลทันที</li>
+                    </ul>
+                </div>
+
+                <div class="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                    <h3 class="font-bold text-lg text-green-700 mb-2">2. โหมดเช็คชื่อ (ใช้งานประจำวัน)</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>ไปที่แท็บ <strong>"เช็คชื่อ"</strong> ระบบจะเริ่มค้นหาใบหน้าอัตโนมัติ</li>
+                        <li>ให้นักเรียนที่ลงทะเบียนแล้วเดินมาอยู่หน้ากล้อง</li>
+                        <li>หากระบบจดจำใบหน้าได้ จะมีกรอบสีเขียวล้อมรอบใบหน้า พร้อมมี <strong>เสียงแจ้งเตือนความสำเร็จ (ติ๊ด)</strong></li>
+                        <li>ข้อมูลการมาเรียนจะถูกส่งไปยัง Google Sheet อัตโนมัติ พร้อมแสดงประวัติการสแกนทางขวามือ</li>
+                        <li><em>หมายเหตุ:</em> หากสแกนซ้ำภายในเวลาที่กำหนด ระบบจะแจ้งเตือนว่า "สแกนซ้ำ" และไม่ส่งข้อมูลซ้ำซ้อน</li>
+                    </ul>
+                </div>
+
+                <div class="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                    <h3 class="font-bold text-lg text-purple-700 mb-2">3. สรุปรายวัน</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>ไปที่แท็บ <strong>"สรุปรายวัน"</strong></li>
+                        <li>เลือกวันที่ต้องการตรวจสอบการมาเรียน</li>
+                        <li>กด <strong>"ค้นหาข้อมูล"</strong> เพื่อดูประวัติว่าในวันนั้นมีใครเช็คชื่อเวลาใดบ้าง</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const statusText = document.getElementById('status-text');
+        const titleText = document.getElementById('title-text');
+        const globalStatus = document.getElementById('global-status');
+        const studentSelect = document.getElementById('student-select');
+        const regMsg = document.getElementById('reg-msg');
+        const resultBox = document.getElementById('result-box');
+        const attendanceList = document.getElementById('attendance-list');
+        const emptyListMsg = document.getElementById('empty-list-msg');
+        const attendanceCountEl = document.getElementById('attendance-count');
+        const cameraSection = document.getElementById('camera-section');
+        const summaryDateInput = document.getElementById('summary-date');
+        
+        let studentsList = [];
+        let faceMatcher = null;
+        let scanInterval = null;
+        let isModelsLoaded = false;
+        let currentMode = '';
+        const checkedInStudents = new Set(); 
+        let attendanceCount = 0; 
+        const duplicateCooldown = new Map(); 
+
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+
+        // ตั้งค่าวันที่เริ่มต้นของสรุปรายวันเป็นวันนี้
+        summaryDateInput.valueAsDate = new Date();
+
+        // ระบบเสียง (Web Audio API)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            if (type === 'success') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'duplicate') {
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.3);
+            }
+        }
+
+        // 1. โหลดโมเดล AI เมื่อเปิดเว็บ
+        Promise.all([
+            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]).then(() => {
+            isModelsLoaded = true;
+            globalStatus.innerText = "โหลด AI สำเร็จ กำลังดึงข้อมูลจากฐานข้อมูล...";
+            globalStatus.className = "text-green-600 font-bold mb-4";
+            fetchStudents();
+        }).catch(err => {
+            globalStatus.innerText = "Error: ไม่สามารถโหลด AI ได้ " + err;
+            globalStatus.className = "text-red-500 font-bold mb-4";
+        });
+
+        // 2. ฟังก์ชันหลักสำหรับเรียก API ของ Google Apps Script
+        async function gasAPI(action, payload = {}) {
+            if (!API_URL || API_URL.trim() === "") {
+                alert("กรุณานำ URL ของ Web App จาก Apps Script มาใส่ในตัวแปร API_URL ก่อนใช้งาน");
+                return { success: false };
+            }
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: action, ...payload })
+                });
+                return await response.json();
+            } catch (err) {
+                console.error(err);
+                return { success: false, error: err.message };
+            }
+        }
+
+        // 3. ดึงรายชื่อนักเรียน
+        async function fetchStudents() {
+            const res = await gasAPI('getStudents');
+            if (res && res.success) {
+                studentsList = res.data;
+                updateDropdown();
+                updateDashboard();
+                globalStatus.innerText = "ระบบพร้อมใช้งาน!";
+                // ซ่อนข้อความแจ้งเตือนเมื่อระบบพร้อม
+                setTimeout(() => { globalStatus.classList.add('hidden'); }, 2000);
+                
+                switchTab('home'); // เริ่มต้นที่หน้าแรก
+            } else {
+                globalStatus.innerText = "ไม่สามารถเชื่อมต่อฐานข้อมูลได้";
+                globalStatus.className = "text-red-500 font-bold mb-4";
+            }
+        }
+
+        // อัปเดตข้อมูลในหน้า Dashboard
+        function updateDashboard() {
+            const total = studentsList.length;
+            const registered = studentsList.filter(s => s.descriptor).length;
+            const unregistered = total - registered;
+
+            document.getElementById('dash-total').innerText = total;
+            document.getElementById('dash-registered').innerText = registered;
+            document.getElementById('dash-unregistered').innerText = unregistered;
+        }
+
+        function updateDropdown() {
+            studentSelect.innerHTML = '<option value="">-- กรุณาเลือกนักเรียน --</option>';
+            studentsList.forEach(st => {
+                const hasFace = st.descriptor ? '✅ ' : '❌ ';
+                studentSelect.innerHTML += `<option value="${st.id}">${hasFace} ${st.name}</option>`;
+            });
+        }
+
+        // 4. สลับโหมด 
+        async function switchTab(mode) {
+            currentMode = mode;
+            stopDetection();
+            
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+
+            // ซ่อนทุก Container ก่อน
+            document.getElementById('home-section').classList.add('hidden');
+            document.getElementById('main-container').classList.add('hidden');
+            document.getElementById('summary-section').classList.add('hidden');
+            document.getElementById('howto-section').classList.add('hidden');
+            
+            // ซ่อน UI ย่อยใน Main Container
+            document.getElementById('register-ui').classList.add('hidden');
+            document.getElementById('checkin-ui').classList.add('hidden');
+            document.getElementById('attendance-list-section').classList.add('hidden');
+            document.getElementById('attendance-list-section').classList.remove('flex');
+            
+            // รีเซ็ตปุ่มทั้งหมดเป็นสีเทา
+            ['home', 'register', 'checkin', 'summary', 'howto'].forEach(t => {
+                const btn = document.getElementById(`btn-tab-${t}`);
+                btn.className = "px-5 py-2 font-bold rounded-full shadow-md transition bg-gray-300 text-gray-700 hover:text-white";
+                if(t==='home') btn.classList.add('hover:bg-blue-600');
+                if(t==='register') btn.classList.add('hover:bg-indigo-600');
+                if(t==='checkin') btn.classList.add('hover:bg-green-600');
+                if(t==='summary') btn.classList.add('hover:bg-purple-600');
+                if(t==='howto') btn.classList.add('hover:bg-orange-500');
+            });
+
+            // เปิดแสดงเฉพาะโหมดที่เลือก
+            if (mode === 'home') {
+                document.getElementById('home-section').classList.remove('hidden');
+                const btn = document.getElementById('btn-tab-home');
+                btn.classList.replace('bg-gray-300', 'bg-blue-600');
+                btn.classList.replace('text-gray-700', 'text-white');
+                updateDashboard();
+            } else if (mode === 'register') {
+                document.getElementById('main-container').classList.remove('hidden');
+                cameraSection.classList.remove('hidden');
+                document.getElementById('register-ui').classList.remove('hidden');
+                
+                const btn = document.getElementById('btn-tab-register');
+                btn.classList.replace('bg-gray-300', 'bg-indigo-600');
+                btn.classList.replace('text-gray-700', 'text-white');
+                
+                titleText.innerText = "📝 ระบบลงทะเบียนใบหน้า";
+                statusText.innerText = "หันหน้าเข้ากล้องและกดปุ่มเพื่อบันทึก";
+                startVideo();
+            } else if (mode === 'checkin') {
+                document.getElementById('main-container').classList.remove('hidden');
+                cameraSection.classList.remove('hidden');
+                document.getElementById('checkin-ui').classList.remove('hidden');
+                document.getElementById('attendance-list-section').classList.remove('hidden');
+                document.getElementById('attendance-list-section').classList.add('flex');
+                
+                const btn = document.getElementById('btn-tab-checkin');
+                btn.classList.replace('bg-gray-300', 'bg-green-600');
+                btn.classList.replace('text-gray-700', 'text-white');
+                
+                titleText.innerText = "✅ ระบบเช็คชื่ออัตโนมัติ";
+                await setupFaceMatcher();
+            } else if (mode === 'summary') {
+                document.getElementById('summary-section').classList.remove('hidden');
+                const btn = document.getElementById('btn-tab-summary');
+                btn.classList.replace('bg-gray-300', 'bg-purple-600');
+                btn.classList.replace('text-gray-700', 'text-white');
+                fetchSummaryData();
+            } else if (mode === 'howto') {
+                document.getElementById('howto-section').classList.remove('hidden');
+                const btn = document.getElementById('btn-tab-howto');
+                btn.classList.replace('bg-gray-300', 'bg-orange-500');
+                btn.classList.replace('text-gray-700', 'text-white');
+            }
+        }
+
+        // 5. เปิดกล้อง
+        function startVideo() {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                .then(stream => { video.srcObject = stream; })
+                .catch(err => {
+                    statusText.innerText = "กรุณาอนุญาตการเข้าถึงกล้อง";
+                });
+        }
+
+        // 6. บันทึกใบหน้า (โหมดลงทะเบียน)
+        async function registerFace() {
+            const studentId = studentSelect.value;
+            if (!studentId) return alert("กรุณาเลือกนักเรียนที่ต้องการลงทะเบียน");
+
+            regMsg.innerText = "กำลังสแกนใบหน้า...";
+            regMsg.className = "mt-4 font-bold text-indigo-600 animate-pulse";
+
+            const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+            
+            if (!detection) {
+                regMsg.innerText = "❌ ตรวจไม่พบใบหน้า กรุณามองกล้องให้ชัดเจน";
+                regMsg.className = "mt-4 font-bold text-red-600";
+                return;
+            }
+
+            const descriptorArray = Array.from(detection.descriptor);
+            const descriptorStr = JSON.stringify(descriptorArray);
+
+            regMsg.innerText = "กำลังบันทึกข้อมูลลงฐานข้อมูล...";
+            
+            const res = await gasAPI('registerFace', { studentId: studentId, descriptor: descriptorStr });
+            
+            if (res.success) {
+                regMsg.innerText = "✅ ลงทะเบียนสำเร็จ!";
+                regMsg.className = "mt-4 font-bold text-green-600";
+                
+                const student = studentsList.find(s => s.id === studentId);
+                if(student) student.descriptor = descriptorStr;
+                updateDropdown();
+                updateDashboard();
+            } else {
+                regMsg.innerText = "❌ บันทึกไม่สำเร็จ: " + res.error;
+                regMsg.className = "mt-4 font-bold text-red-600";
+            }
+        }
+
+        // 7. เตรียมข้อมูลสำหรับโหมดเช็คชื่อ
+        async function setupFaceMatcher() {
+            statusText.innerText = "กำลังเตรียมข้อมูลใบหน้าสำหรับการเช็คชื่อ...";
+            
+            const registeredStudents = studentsList.filter(s => s.descriptor);
+            
+            if (registeredStudents.length === 0) {
+                statusText.innerText = "ยังไม่มีนักเรียนคนใดลงทะเบียนใบหน้า กรุณาลงทะเบียนก่อน";
+                statusText.className = "text-red-500 font-bold mb-4";
+                return;
+            }
+
+            const labeledDescriptors = registeredStudents.map(student => {
+                const floatArray = new Float32Array(JSON.parse(student.descriptor));
+                return new faceapi.LabeledFaceDescriptors(`${student.id}|${student.name}`, [floatArray]);
+            });
+
+            faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55); 
+            
+            statusText.innerText = `พร้อมเช็คชื่อ! (มีข้อมูล ${registeredStudents.length} คน)`;
+            statusText.className = "text-green-600 font-bold mb-4";
+            
+            startVideo();
+            startDetection();
+        }
+
+        // 8. เริ่มลูปสแกนเช็คชื่อ
+        function startDetection() {
+            let canvas = document.querySelector('canvas');
+            if (!canvas) {
+                canvas = faceapi.createCanvasFromMedia(video);
+                document.querySelector('.video-wrapper').append(canvas);
+            }
+            
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            faceapi.matchDimensions(canvas, displaySize);
+
+            if (scanInterval) clearInterval(scanInterval);
+
+            scanInterval = setInterval(async () => {
+                if(currentMode !== 'checkin' || !faceMatcher) return;
+
+                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+                
+                const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
+                
+                results.forEach((result, i) => {
+                    const box = resizedDetections[i].detection.box;
+                    let label = result.label;
+                    let boxColor = 'red';
+
+                    if (label !== 'unknown') {
+                        boxColor = '#10b981'; 
+                        const [id, name] = label.split('|');
+                        label = name; 
+                        
+                        triggerAttendance(id, name);
+                    } else {
+                        label = "ไม่พบข้อมูล";
+                    }
+
+                    const drawBox = new faceapi.draw.DrawBox(box, { label: label, boxColor: boxColor });
+                    drawBox.draw(canvas);
+                });
+            }, 600); 
+        }
+
+        // หยุดการวาดใบหน้าเวลาสลับโหมด
+        function stopDetection() {
+            if (scanInterval) clearInterval(scanInterval);
+            const canvas = document.querySelector('canvas');
+            if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 9. ส่งข้อมูลเช็คชื่อและอัปเดตรายการ
+        async function triggerAttendance(id, name) {
+            const now = Date.now();
+
+            if (!checkedInStudents.has(id)) {
+                checkedInStudents.add(id); 
+                playSound('success');
+                
+                resultBox.innerHTML = `<p class="text-blue-600 font-bold text-lg animate-pulse">⏳ กำลังบันทึกข้อมูล...</p>`;
+                
+                const res = await gasAPI('checkIn', { studentId: id, studentName: name });
+                
+                if(res.success) {
+                    // ดึงข้อมูลนักเรียนจากลิสต์ที่โหลดไว้ เพื่อเอาข้อมูลอื่นๆ มาแสดง
+                    const studentInfo = studentsList.find(s => s.id === id) || { name: res.name, className: 'ไม่ระบุชั้น' };
+
+                    // อัปเดตกล่องผลลัพธ์การเช็คชื่อแบบใหม่ (แสดงข้อมูลครบถ้วน)
+                    resultBox.innerHTML = `
+                        <div class="w-full text-left bg-white p-4 rounded-xl border-l-4 border-green-500 shadow-sm">
+                            <p class="text-green-600 font-bold text-xl mb-3 flex items-center gap-2"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> เช็คชื่อสำเร็จ!</p>
+                            <div class="grid grid-cols-3 gap-2 text-sm md:text-base">
+                                <div class="col-span-1 text-gray-500 font-medium">รหัสนักเรียน:</div>
+                                <div class="col-span-2 text-gray-800 font-bold">${id}</div>
+                                
+                                <div class="col-span-1 text-gray-500 font-medium">ชื่อ-สกุล:</div>
+                                <div class="col-span-2 text-gray-800 font-bold">${studentInfo.name}</div>
+                                
+                                <div class="col-span-1 text-gray-500 font-medium">ชั้นเรียน:</div>
+                                <div class="col-span-2 text-gray-800 font-bold">${studentInfo.className || '-'}</div>
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100 text-sm text-gray-400">
+                                ⏰ เวลาที่บันทึก: <span class="text-gray-600 font-semibold">${res.time}</span>
+                            </div>
+                        </div>
+                    `;
+
+                    if(emptyListMsg) emptyListMsg.style.display = 'none';
+
+                    const listItem = document.createElement('li');
+                    listItem.className = "flex justify-between items-center p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors duration-200";
+                    listItem.innerHTML = `
+                        <div class="flex items-center space-x-3 w-3/4">
+                            <div class="bg-green-100 p-2 rounded-full shrink-0">
+                                <svg class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="flex flex-col truncate">
+                                <span class="font-bold text-gray-800 text-sm">${id}</span>
+                                <span class="font-medium text-gray-600 text-xs truncate">${studentInfo.name}</span>
+                            </div>
+                        </div>
+                        <span class="text-xs font-semibold text-gray-500 bg-white px-2 py-1 border rounded-md shadow-sm shrink-0">${res.time}</span>
+                    `;
+                    
+                    attendanceList.prepend(listItem);
+                    attendanceCount++;
+                    attendanceCountEl.innerText = `${attendanceCount} คน`;
+                } else {
+                    checkedInStudents.delete(id);
+                    resultBox.innerHTML = `<p class="text-red-600 font-bold text-xl">❌ บันทึกไม่สำเร็จ กรุณาลองใหม่</p>`;
+                }
+
+                setTimeout(() => { checkedInStudents.delete(id); }, 60000); 
+            } else {
+                const lastWarned = duplicateCooldown.get(id) || 0;
+                if (now - lastWarned > 3000) { 
+                    duplicateCooldown.set(id, now);
+                    playSound('duplicate'); 
+
+                    // ดึงข้อมูลนักเรียนเพื่อแสดงในหน้าต่างสแกนซ้ำด้วย
+                    const studentInfo = studentsList.find(s => s.id === id) || { name: name };
+
+                    resultBox.innerHTML = `
+                        <div class="w-full text-left bg-orange-50 p-4 rounded-xl border-l-4 border-orange-500 shadow-sm">
+                            <p class="text-orange-600 font-bold text-xl mb-2 flex items-center gap-2">⚠️ สแกนซ้ำ!</p>
+                            <p class="text-gray-700 font-medium">${id} - ${studentInfo.name}</p>
+                            <p class="text-sm text-gray-500 mt-1">คุณได้เช็คชื่อรอบนี้ไปแล้ว ระบบจะยังไม่บันทึกข้อมูลซ้ำ</p>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // 10. ดึงข้อมูลสรุปรายวัน
+        async function fetchSummaryData() {
+            const dateStr = summaryDateInput.value;
+            if(!dateStr) return;
+
+            const [year, month, day] = dateStr.split('-');
+            const formattedDate = `${day}/${month}/${year}`;
+
+            document.getElementById('summary-loading').classList.remove('hidden');
+            document.getElementById('summary-table-container').classList.add('hidden');
+            document.getElementById('summary-empty').classList.add('hidden');
+
+            const res = await gasAPI('getDailySummary', { date: formattedDate });
+            
+            document.getElementById('summary-loading').classList.add('hidden');
+            
+            if (res.success && res.data && res.data.length > 0) {
+                const tbody = document.getElementById('summary-tbody');
+                tbody.innerHTML = '';
+                res.data.forEach(row => {
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-purple-50 transition-colors">
+                            <td class="py-3 px-4 text-gray-500">${row[1]}</td>
+                            <td class="py-3 px-4 font-medium text-gray-700">${row[2]}</td>
+                            <td class="py-3 px-4 text-gray-800">${row[3]}</td>
+                        </tr>
+                    `;
+                });
+                document.getElementById('summary-table-container').classList.remove('hidden');
+            } else {
+                document.getElementById('summary-empty').classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
