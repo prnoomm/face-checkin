@@ -19,6 +19,22 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
+     <script>
+    // ป้องกันคลิกขวา
+    document.addEventListener("contextmenu", event => event.preventDefault());
+
+    // ป้องกันการกด F12, Ctrl+U, Ctrl+Shift+I
+    document.addEventListener("keydown", function (event) {
+      if (
+        event.key === "F12" ||
+        (event.ctrlKey && event.shiftKey && event.key === "I") ||
+        (event.ctrlKey && event.key === "U") ||
+        (event.ctrlKey && event.shiftKey && event.key === "J")
+      ) {
+        event.preventDefault();
+      }
+    });
+  </script>
 </head>
 <body class="text-gray-800 pb-10">
 
