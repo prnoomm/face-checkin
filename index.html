@@ -23,6 +23,22 @@
         .status-ขาดเรียน { background-color: #fee2e2; color: #991b1b; border-color: #ef4444; }
         .status-ลา { background-color: #fef3c7; color: #92400e; border-color: #f59e0b; }
     </style>
+          <script>
+    // ป้องกันคลิกขวา
+    document.addEventListener("contextmenu", event => event.preventDefault());
+
+    // ป้องกันการกด F12, Ctrl+U, Ctrl+Shift+I
+    document.addEventListener("keydown", function (event) {
+      if (
+        event.key === "F12" ||
+        (event.ctrlKey && event.shiftKey && event.key === "I") ||
+        (event.ctrlKey && event.key === "U") ||
+        (event.ctrlKey && event.shiftKey && event.key === "J")
+      ) {
+        event.preventDefault();
+      }
+    });
+  </script>
 </head>
 <body class="text-gray-800 pb-10">
 
